@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grant Project Review Dashboard</title>
+    
+    <!-- Dependencies -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.22.20/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+
+    <style>
+        .transition-expand {
+            transition: max-height 0.3s ease-out, opacity 0.2s ease-out;
+            overflow: hidden;
+        }
+        .expanded {
+            max-height: 5000px; /* Increased to handle larger content */
+            opacity: 1;
+            visibility: visible;
+        }
+        .collapsed {
+            max-height: 0;
+            opacity: 0;
+            visibility: hidden;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Add these new styles */
+        .card-wrapper {
+            position: relative;
+            width: 100%;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .card-banner {
+            width: 100%;
+            height: auto;
+            position: relative;
+            z-index: 1;
+        }
+
+        .card-content {
+            position: relative;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .expanded-content {
+            position: relative;
+            overflow-y: auto;
+            max-height: 70vh;
+            padding: 1rem;
+            contain: content;
+            animation: expandIn 0.3s ease-out;
+        }
+
+        @keyframes expandIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Add these new styles for mobile menu */
+        .mobile-menu-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 40;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease-in-out;
+        }
+
+        .mobile-menu-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .filter-panel {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            width: 320px;
+            background-color: white;
+            z-index: 50;
+            transform: translateX(-100%);
+            transition: transform 0.3s ease-in-out;
+        }
+
+        .filter-panel.active {
+            transform: translateX(0);
+        }
+
+        @media (min-width: 768px) {
+            .filter-panel {
+                position: relative;
+                transform: none;
+                height: auto;
+                width: 320px;
+            }
+
+            .mobile-menu-overlay {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // Update utility functions for CSV data structure
+        const extractCategories = (projects) => {
+            const categories = new Set();
+            projects.forEach(project => {
+                if (project.categories) {
+                    project.categories.split(',')
+                        .map(cat => cat.trim())
+                        .filter(Boolean)
+                        .forEach(category => categories.add(category));
+                }
+            });
+            return Array.from(categories).sort();
+        };
+
+        const validateProjectData = (data) => {
+            if (!Array.isArray(data)) return false;
+            return data.every(project => 
+                project.project_name &&
+                project.problem_statement &&
+                project.activities
+            );
+        };
+
+        const searchProject = (project, searchTerm) => {
+            const searchFields = [
+                project.project_name,
+                project.project_location,
+                project.problem_statement,
+                project.categories,
+                project.policy_area,
+                project.problem_type
+            ];
+            
+            const searchTermLower = searchTerm.toLowerCase();
+            return searchFields.some(field => {
+                if (!field) return false;
+                return field.toLowerCase().includes(searchTermLower);
+            });
+        };
+
+        // Add new utility function to merge website data
+        const mergeWebsiteData = (projects, websiteData) => {
+            const websiteMap = new Map(websiteData.map(data => [data.url, data]));
+            return projects.map(project => ({
+                ...project,
+                websiteData: websiteMap.get(project.project_website) || null
+            }));
+        };
+
+        // Add utility functions to extract locations and durations
+        const extractLocations = (projects) => {
+            const locations = new Set();
+            projects.forEach(project => {
+                const location = project.project_location;
+                if (location) locations.add(location);
+            });
+            return Array.from(locations).sort();
+        };
+
+        const extractYearsFounded = (projects) => {
+            const years = new Set();
+            projects.forEach(project => {
+                const yearFounded = project.year_founded;
+                if (yearFounded) years.add(yearFounded);
+            });
+            return Array.from(years).sort((a, b) => b - a); // Sort descending (newest first)
+        };
+
+        // Add this utility function near the top with other utility functions
+        const createProjectId = (project) => {
+            return `${project.project_name}-${project.project_website}`.replace(/[^a-zA-Z0-9-]/g, '-');
+        };
+
+        // Project Card Component
+        const ProjectCard = ({ project, expanded, onToggle, isGridView }) => {
+            const contentRef = React.useRef(null);
+
+            React.useEffect(() => {
+                if (expanded && contentRef.current) {
+                    const rect = contentRef.current.getBoundingClientRect();
+                    if (rect.bottom > window.innerHeight) {
+                        contentRef.current.scrollIntoView({
+                            behavior: 'smooth',
+                            block: 'nearest'
+                        });
+                    }
+                }
+            }, [expanded]);
+
+            const renderTags = (field) => {
+                if (!project[field]) return null;
+                return project[field].split(',').map((tag, index) => (
+                    <span 
+                        key={`${field}-${index}`}
+                        className={`px-2 py-1 rounded-full text-sm ${
+                            field === 'policy_area' ? 'bg-purple-100' : 'bg-green-100'
+                        }`}
+                    >
+                        {field === 'policy_area' ? '📋' : '🎯'} {tag.trim()}
+                    </span>
+                ));
+            };
+
+            return (
+                <div 
+                    className={`card-wrapper bg-white rounded-lg shadow-sm mb-4 ${
+                        expanded ? 'col-span-full' : ''
+                    } ${isGridView && !expanded ? 'h-full flex flex-col' : ''}`}
+                    ref={contentRef}
+                >
+                    {/* Banner Image - Rendered once outside expandable area */}
+                    {isGridView && project.screenshot_path && !expanded && (
+                        <div className="card-banner mt-3 mb-2">
+                            <img 
+                                src={`${project.screenshot_path}`}
+                                alt={`Screenshot of ${project.project_name} website`}
+                                className="w-full h-32 object-cover rounded-lg"
+                            />
+                        </div>
+                    )}
+
+                    {/* Card Header */}
+                    <div 
+                        className={`p-4 cursor-pointer hover:bg-gray-50 ${
+                            isGridView ? 'flex-1' : ''
+                        }`}
+                        onClick={onToggle}
+                    >
+                        <div className="flex justify-between items-center">
+                            <h3 className="text-lg font-semibold">{project.project_name}</h3>
+                            <div className="flex items-center gap-2">
+                                {project.project_website && (
+                                    <a
+                                        href={project.project_website}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-md text-sm transition-colors duration-200"
+                                        onClick={e => e.stopPropagation()}
+                                    >
+                                        Visit Website
+                                    </a>
+                                )}
+                                <span className="text-gray-500">
+                                    {expanded ? '▼' : '▶'}
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* Tags and Metadata */}
+                        <div className="flex flex-wrap gap-2 mt-2">
+                            {renderTags('categories')}
+                            {renderTags('problem_type')}
+                            {renderTags('policy_area')}
+                        </div>
+
+                        <div className="mt-2 text-sm text-gray-600">
+                            {project.timeframe && <div>Duration: {project.timeframe}</div>}
+                            {project.project_location && <div>Location: {project.project_location}</div>}
+                            {project.funding_source && <div>Funding: {project.funding_source}</div>}
+                        </div>
+                    </div>
+
+                    {/* Expanded Content */}
+                    {expanded && (
+                        <div className="expanded-content border-t">
+                            <div className="grid grid-cols-2 gap-4">
+                                {/* Left column - All text content */}
+                                <div className="space-y-4">
+                                    <section>
+                                        <h4 className="font-semibold text-sm mb-1">Problem Statement</h4>
+                                        <p className="text-gray-700 text-xs leading-tight">{project.problem_statement}</p>
+                                    </section>
+
+                                    {project.content_summary && (
+                                        <section>
+                                            <h4 className="font-semibold text-sm mb-1">Website Summary</h4>
+                                            <p className="text-gray-700 text-xs leading-tight">{project.content_summary}</p>
+                                        </section>
+                                    )}
+
+                                    <section>
+                                        <h4 className="font-semibold text-sm mb-1">Target Population</h4>
+                                        <p className="text-gray-700 text-xs leading-tight">{project.target_population}</p>
+                                    </section>
+
+                                    <section>
+                                        <h4 className="font-semibold text-sm mb-1">Activities and Impact</h4>
+                                        
+                                        {project.activities && (
+                                            <div className="mb-2">
+                                                <h5 className="font-medium text-xs">Activities</h5>
+                                                <p className="text-gray-700 text-xs leading-tight">{project.activities}</p>
+                                            </div>
+                                        )}
+
+                                        {project.outcomes && (
+                                            <div className="mb-2">
+                                                <h5 className="font-medium text-xs">Outcomes</h5>
+                                                <p className="text-gray-700 text-xs leading-tight">{project.outcomes}</p>
+                                            </div>
+                                        )}
+
+                                        {project.impact && (
+                                            <div>
+                                                <h5 className="font-medium text-xs">Impact</h5>
+                                                <p className="text-gray-700 text-xs leading-tight">{project.impact}</p>
+                                            </div>
+                                        )}
+                                    </section>
+
+                                    {/* Technical Details */}
+                                    {project.language && (
+                                        <section>
+                                            <h4 className="font-semibold text-sm mb-1">Technical Details</h4>
+                                            <div className="space-y-0.5 text-xs">
+                                                <p>Language: {project.language}</p>
+                                                {project.stars && <p>GitHub Stars: {project.stars}</p>}
+                                                {project.forks && <p>GitHub Forks: {project.forks}</p>}
+                                            </div>
+                                        </section>
+                                    )}
+                                </div>
+
+                                {/* Right column - Screenshot only */}
+                                <div>
+                                    {project.screenshot_path && (
+                                        <div className="sticky top-4">
+                                            <img 
+                                                src={`${project.screenshot_path}`}
+                                                alt={`Screenshot of ${project.project_name} website`}
+                                                className="rounded-lg shadow-sm w-full h-auto"
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // Update FilterPanel Component
+        const FilterPanel = ({ projects, filters, setFilters }) => {
+            const allCategories = extractCategories(projects);
+            const allLocations = [...new Set(projects.map(p => p.project_location).filter(Boolean))];
+            const allTimeframes = [...new Set(projects.map(p => p.timeframe).filter(Boolean))];
+            const allMechanisms = [...new Set(projects.map(p => p.primary_mechanism).filter(Boolean))];
+            const allUrgencies = [...new Set(projects.map(p => p.problem_urgency).filter(Boolean))];
+            const allScopes = [...new Set(projects.map(p => p.problem_scope).filter(Boolean))];
+            
+            const years = projects
+                .map(p => parseInt(p.year_founded))
+                .filter(year => !isNaN(year));
+            const minYear = Math.min(...years);
+            const maxYear = Math.max(...years);
+
+            return (
+                <div className="w-80 flex-shrink-0 p-4 border-r min-h-screen bg-white overflow-y-auto">
+                    {/* Categories */}
+                    <div className="mb-6">
+                        <h3 className="font-semibold mb-2">Categories</h3>
+                        <div className="space-y-2 max-h-40 overflow-y-auto">
+                            {allCategories.map(category => (
+                                <label key={category} className="flex items-center space-x-2">
+                                    <input
+                                        type="checkbox"
+                                        checked={filters.categories.includes(category)}
+                                        onChange={(e) => {
+                                            setFilters(prev => ({
+                                                ...prev,
+                                                categories: e.target.checked 
+                                                    ? [...prev.categories, category]
+                                                    : prev.categories.filter(c => c !== category)
+                                            }));
+                                        }}
+                                        className="rounded"
+                                    />
+                                    <span className="text-sm">{category}</span>
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Timeframe */}
+                    <div className="mb-6">
+                        <h3 className="font-semibold mb-2">Timeframe</h3>
+                        <div className="space-y-2">
+                            {allTimeframes.map(timeframe => (
+                                <label key={timeframe} className="flex items-center space-x-2">
+                                    <input
+                                        type="checkbox"
+                                        checked={filters.timeframes.includes(timeframe)}
+                                        onChange={(e) => {
+                                            setFilters(prev => ({
+                                                ...prev,
+                                                timeframes: e.target.checked 
+                                                    ? [...prev.timeframes, timeframe]
+                                                    : prev.timeframes.filter(t => t !== timeframe)
+                                            }));
+                                        }}
+                                        className="rounded"
+                                    />
+                                    <span className="text-sm">{timeframe}</span>
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Primary Mechanism */}
+                    <div className="mb-6">
+                        <h3 className="font-semibold mb-2">Primary Mechanism</h3>
+                        <div className="space-y-2">
+                            {allMechanisms.map(mechanism => (
+                                <label key={mechanism} className="flex items-center space-x-2">
+                                    <input
+                                        type="checkbox"
+                                        checked={filters.mechanisms.includes(mechanism)}
+                                        onChange={(e) => {
+                                            setFilters(prev => ({
+                                                ...prev,
+                                                mechanisms: e.target.checked 
+                                                    ? [...prev.mechanisms, mechanism]
+                                                    : prev.mechanisms.filter(m => m !== mechanism)
+                                            }));
+                                        }}
+                                        className="rounded"
+                                    />
+                                    <span className="text-sm">{mechanism}</span>
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Problem Urgency */}
+                    <div className="mb-6">
+                        <h3 className="font-semibold mb-2">Problem Urgency</h3>
+                        <div className="space-y-2">
+                            {allUrgencies.map(urgency => (
+                                <label key={urgency} className="flex items-center space-x-2">
+                                    <input
+                                        type="checkbox"
+                                        checked={filters.urgencies.includes(urgency)}
+                                        onChange={(e) => {
+                                            setFilters(prev => ({
+                                                ...prev,
+                                                urgencies: e.target.checked 
+                                                    ? [...prev.urgencies, urgency]
+                                                    : prev.urgencies.filter(u => u !== urgency)
+                                            }));
+                                        }}
+                                        className="rounded"
+                                    />
+                                    <span className="text-sm">{urgency}</span>
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Problem Scope */}
+                    <div className="mb-6">
+                        <h3 className="font-semibold mb-2">Problem Scope</h3>
+                        <div className="space-y-2">
+                            {allScopes.map(scope => (
+                                <label key={scope} className="flex items-center space-x-2">
+                                    <input
+                                        type="checkbox"
+                                        checked={filters.scopes.includes(scope)}
+                                        onChange={(e) => {
+                                            setFilters(prev => ({
+                                                ...prev,
+                                                scopes: e.target.checked 
+                                                    ? [...prev.scopes, scope]
+                                                    : prev.scopes.filter(s => s !== scope)
+                                            }));
+                                        }}
+                                        className="rounded"
+                                    />
+                                    <span className="text-sm">{scope}</span>
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Location */}
+                    <div className="mb-6">
+                        <h3 className="font-semibold mb-2">Location</h3>
+                        <div className="space-y-2">
+                            {allLocations.map(location => (
+                                <label key={location} className="flex items-center space-x-2">
+                                    <input
+                                        type="checkbox"
+                                        checked={filters.locations.includes(location)}
+                                        onChange={(e) => {
+                                            setFilters(prev => ({
+                                                ...prev,
+                                                locations: e.target.checked 
+                                                    ? [...prev.locations, location]
+                                                    : prev.locations.filter(l => l !== location)
+                                            }));
+                                        }}
+                                        className="rounded"
+                                    />
+                                    <span className="text-sm">{location}</span>
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Year Founded Range */}
+                    <div className="mb-6">
+                        <h3 className="font-semibold mb-2">Year Founded Range</h3>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm text-gray-600 mb-1">
+                                    Min: {filters.yearRange.min}
+                                </label>
+                                <input
+                                    type="range"
+                                    min={minYear}
+                                    max={maxYear}
+                                    value={filters.yearRange.min}
+                                    onChange={(e) => setFilters(prev => ({
+                                        ...prev,
+                                        yearRange: {
+                                            ...prev.yearRange,
+                                            min: Math.min(parseInt(e.target.value), prev.yearRange.max)
+                                        }
+                                    }))}
+                                    className="w-full"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm text-gray-600 mb-1">
+                                    Max: {filters.yearRange.max}
+                                </label>
+                                <input
+                                    type="range"
+                                    min={minYear}
+                                    max={maxYear}
+                                    value={filters.yearRange.max}
+                                    onChange={(e) => setFilters(prev => ({
+                                        ...prev,
+                                        yearRange: {
+                                            ...prev.yearRange,
+                                            max: Math.max(parseInt(e.target.value), prev.yearRange.min)
+                                        }
+                                    }))}
+                                    className="w-full"
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    <button
+                        onClick={() => setFilters({ 
+                            categories: [],
+                            timeframes: [],
+                            mechanisms: [],
+                            urgencies: [],
+                            scopes: [],
+                            locations: [],
+                            yearRange: { min: minYear, max: maxYear },
+                            search: ''
+                        })}
+                        className="w-full px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-md"
+                    >
+                        Clear Filters
+                    </button>
+                </div>
+            );
+        };
+
+        // Main Dashboard Component
+        const Dashboard = () => {
+            const [projects, setProjects] = useState([]);
+            const [filters, setFilters] = useState({
+                categories: [],
+                timeframes: [],
+                mechanisms: [],
+                urgencies: [],
+                scopes: [],
+                locations: [],
+                yearRange: { min: 0, max: 3000 },
+                search: ''
+            });
+            const [expandedProjects, setExpandedProjects] = useState(new Set());
+            const [viewMode, setViewMode] = useState('list');
+            const [error, setError] = useState(null);
+            const [sortConfig, setSortConfig] = useState({ field: 'projectName', direction: 'asc' });
+            const [websiteData, setWebsiteData] = useState([]);
+            const [categories, setCategories] = useState([]);
+            const [showFilters, setShowFilters] = useState(window.innerWidth >= 768); // Show by default on desktop
+
+            useEffect(() => {
+                fetch('grantmaking_projects_with_scraped_data.csv')
+                    .then(response => response.text())
+                    .then(csvText => {
+                        // Parse CSV with proper handling of quoted fields and N/A values
+                        const parseCSVLine = (line) => {
+                            const values = [];
+                            let currentValue = '';
+                            let withinQuotes = false;
+                            let escapeNext = false;
+                            
+                            for (let i = 0; i < line.length; i++) {
+                                const char = line[i];
+                                
+                                if (escapeNext) {
+                                    currentValue += char;
+                                    escapeNext = false;
+                                    continue;
+                                }
+
+                                if (char === '\\') {
+                                    escapeNext = true;
+                                    continue;
+                                }
+
+                                if (char === '"') {
+                                    if (withinQuotes && line[i + 1] === '"') {
+                                        currentValue += '"';
+                                        i++; // Skip next quote
+                                    } else {
+                                        withinQuotes = !withinQuotes;
+                                    }
+                                } else if (char === ',' && !withinQuotes) {
+                                    values.push(currentValue.trim());
+                                    currentValue = '';
+                                } else {
+                                    currentValue += char;
+                                }
+                            }
+                            values.push(currentValue.trim());
+                            
+                            return values.map(value => 
+                                value === 'N/A' ? '' : value
+                                    .replace(/^"(.*)"$/, '$1') // Remove surrounding quotes
+                                    .replace(/\\n/g, '\n')     // Convert escaped newlines
+                            );
+                        };
+
+                        // Update line splitting to handle quoted newlines
+                        const lines = csvText.split(/\r?\n(?=(?:[^"]*"[^"]*")*[^"]*$)/)
+                            .filter(line => line.trim())
+                            .map(line => line.replace(/^\s*|\s*$/g, '')); // Trim whitespace
+
+                        const headers = lines[0].split(',').map(h => h.trim());
+                        const projectsData = lines.slice(1).map(line => {
+                            const values = parseCSVLine(line);
+                            const project = {};
+                            headers.forEach((header, index) => {
+                                project[header] = values[index] || '';
+                            });
+                            return project;
+                        }).filter(project => project.website && project.website !== 'N/A');
+
+                        console.log('Total projects:', projectsData.length);
+                        setProjects(projectsData);
+                        
+                        // Update categories
+                        const allCategories = new Set();
+                        projectsData.forEach(project => {
+                            if (project.categories && project.categories !== 'N/A') {
+                                project.categories.split(',')
+                                    .map(cat => cat.trim())
+                                    .filter(cat => cat && cat !== 'N/A')
+                                    .forEach(cat => allCategories.add(cat));
+                            }
+                        });
+                        setCategories(Array.from(allCategories).sort());
+
+                        // Update year range
+                        const years = projectsData
+                            .map(p => p.year_founded)
+                            .filter(year => year && year !== 'N/A')
+                            .map(year => parseFloat(year))
+                            .filter(year => !isNaN(year));
+                        
+                        if (years.length > 0) {
+                            setFilters(prev => ({
+                                ...prev,
+                                yearRange: {
+                                    min: Math.min(...years),
+                                    max: Math.max(...years)
+                                }
+                            }));
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error loading data:', error);
+                        setError('Error loading project data');
+                    });
+            }, []);
+
+            const filteredProjects = projects.filter(project => {
+                const matchesCategories = filters.categories.length === 0 || 
+                    filters.categories.every(category => 
+                        project.categories?.includes(category)
+                    );
+
+                const matchesTimeframe = filters.timeframes.length === 0 ||
+                    filters.timeframes.includes(project.timeframe);
+
+                const matchesMechanism = filters.mechanisms.length === 0 ||
+                    filters.mechanisms.includes(project.primary_mechanism);
+
+                const matchesUrgency = filters.urgencies.length === 0 ||
+                    filters.urgencies.includes(project.problem_urgency);
+
+                const matchesScope = filters.scopes.length === 0 ||
+                    filters.scopes.includes(project.problem_scope);
+
+                const matchesLocation = filters.locations.length === 0 ||
+                    filters.locations.includes(project.project_location);
+
+                const yearFounded = parseInt(project.year_founded);
+                const matchesYear = !yearFounded || (
+                    yearFounded >= filters.yearRange.min && 
+                    yearFounded <= filters.yearRange.max
+                );
+
+                const matchesSearch = !filters.search || searchProject(project, filters.search);
+
+                return matchesCategories && matchesTimeframe && matchesMechanism && 
+                       matchesUrgency && matchesScope && matchesLocation && 
+                       matchesYear && matchesSearch;
+            });
+
+            const sortedProjects = _.orderBy(
+                filteredProjects,
+                [project => _.get(project, 'project_name', '')?.toLowerCase()],
+                ['asc']
+            );
+
+            const toggleProject = (projectId) => {
+                setExpandedProjects(prev => {
+                    const next = new Set(prev);
+                    if (next.has(projectId)) {
+                        next.delete(projectId);
+                    } else {
+                        next.add(projectId);
+                    }
+                    return next;
+                });
+            };
+
+            return (
+                <div className="min-h-screen bg-gray-50">
+                    {/* Mobile menu overlay */}
+                    <div 
+                        className={`mobile-menu-overlay ${showFilters ? 'active' : ''}`}
+                        onClick={() => setShowFilters(false)}
+                    />
+
+                    {/* Header */}
+                    <header className="bg-white shadow-sm">
+                        <div className="w-full px-4 py-4 sm:px-6 lg:px-8">
+                            <div className="flex justify-between items-center">
+                                <div className="flex items-center gap-4">
+                                    <button
+                                        className="md:hidden p-2 hover:bg-gray-100 rounded-md"
+                                        onClick={() => setShowFilters(!showFilters)}
+                                        aria-label="Toggle filters"
+                                    >
+                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            {showFilters ? (
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                            ) : (
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                                            )}
+                                        </svg>
+                                    </button>
+                                    <div>
+                                        <h1 className="text-2xl font-bold text-gray-900">
+                                            Grant Project Review Dashboard
+                                        </h1>
+                                        <p className="text-gray-500">
+                                            {filteredProjects.length} of {projects.length} projects
+                                        </p>
+                                    </div>
+                                </div>
+                                
+                                <div className="flex items-center space-x-4">
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            placeholder="Search projects..."
+                                            value={filters.search}
+                                            onChange={(e) => setFilters(prev => ({ 
+                                                ...prev, 
+                                                search: e.target.value 
+                                            }))}
+                                            className="pl-10 pr-4 py-2 border rounded-md w-64"
+                                        />
+                                        <span className="absolute left-3 top-2.5 text-gray-400">
+                                            🔍
+                                        </span>
+                                    </div>
+
+                                    <button
+                                        onClick={() => setViewMode(prev => 
+                                            prev === 'grid' ? 'list' : 'grid'
+                                        )}
+                                        className="p-2 hover:bg-gray-100 rounded-md"
+                                    >
+                                        {viewMode === 'grid' ? '📝' : '📊'}
+                                    </button>
+                                </div>
+                                {error && (
+                                    <div className="mt-2 p-2 bg-red-100 text-red-700 rounded">
+                                        {error}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* Main Content */}
+                    <div className="w-full px-4 sm:px-6 lg:px-8">
+                        <div className="flex">
+                            {/* Filter Panel */}
+                            <div className={`filter-panel ${showFilters ? 'active' : ''}`}>
+                                <div className="p-4">
+                                    <div className="flex justify-between items-center md:hidden mb-4">
+                                        <h2 className="text-lg font-semibold">Filters</h2>
+                                        <button
+                                            onClick={() => setShowFilters(false)}
+                                            className="p-2 hover:bg-gray-100 rounded-md"
+                                        >
+                                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    <FilterPanel
+                                        projects={projects}
+                                        filters={filters}
+                                        setFilters={setFilters}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Main content area */}
+                            <main className="flex-1 p-4">
+                                <div className={`grid grid-cols-1 ${
+                                    viewMode === 'grid' 
+                                        ? 'sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4' 
+                                        : ''
+                                } gap-4 auto-rows-fr`}>
+                                    {sortedProjects.map(project => {
+                                        const projectId = createProjectId(project);
+                                        return (
+                                            <ProjectCard
+                                                key={projectId}
+                                                project={project}
+                                                expanded={expandedProjects.has(projectId)}
+                                                onToggle={() => toggleProject(projectId)}
+                                                isGridView={viewMode === 'grid'}
+                                            />
+                                        );
+                                    })}
+                                </div>
+                            </main>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // Initialize React
+        const { useState, useEffect } = React;
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<Dashboard />);
+    </script>
+</body>
+</html>
