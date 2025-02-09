@@ -236,13 +236,16 @@
                     } ${isGridView && !expanded ? 'h-full flex flex-col' : ''}`}
                     ref={contentRef}
                 >
-                    {/* Banner Image - Rendered once outside expandable area */}
+                    {/* Banner Image - Made clickable */}
                     {isGridView && project.screenshot_path && !expanded && (
-                        <div className="card-banner mt-3 mb-2">
+                        <div 
+                            className="card-banner mt-3 mb-2 cursor-pointer"
+                            onClick={onToggle}
+                        >
                             <img 
                                 src={`${project.screenshot_path}`}
                                 alt={`Screenshot of ${project.project_name} website`}
-                                className="w-full h-32 object-cover rounded-lg"
+                                className="w-full h-32 object-cover rounded-lg hover:opacity-90 transition-opacity"
                             />
                         </div>
                     )}
@@ -257,22 +260,24 @@
                         <div className="flex justify-between items-center">
                             <h3 className="text-lg font-semibold">{project.project_name}</h3>
                             <div className="flex items-center gap-2">
-                                {project.project_website && (
-                                    <a
-                                        href={project.project_website}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-md text-sm transition-colors duration-200"
-                                        onClick={e => e.stopPropagation()}
-                                    >
-                                        Visit Website
-                                    </a>
-                                )}
                                 <span className="text-gray-500">
                                     {expanded ? '▼' : '▶'}
                                 </span>
                             </div>
                         </div>
+
+                        {/* Visit Website Button - Added to non-expanded view */}
+                        {project.website && (
+                            <a
+                                href={project.website}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-2 inline-block px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-md text-sm transition-colors duration-200"
+                                onClick={e => e.stopPropagation()}
+                            >
+                                Visit Website
+                            </a>
+                        )}
 
                         {/* Tags and Metadata */}
                         <div className="flex flex-wrap gap-2 mt-2">
@@ -349,15 +354,28 @@
                                     )}
                                 </div>
 
-                                {/* Right column - Screenshot only */}
+                                {/* Right column - Screenshot made clickable */}
                                 <div>
                                     {project.screenshot_path && (
                                         <div className="sticky top-4">
                                             <img 
                                                 src={`${project.screenshot_path}`}
                                                 alt={`Screenshot of ${project.project_name} website`}
-                                                className="rounded-lg shadow-sm w-full h-auto"
+                                                className="rounded-lg shadow-sm w-full h-auto cursor-pointer hover:opacity-90 transition-opacity"
+                                                onClick={onToggle}
                                             />
+                                            {/* Visit Website Button - Added to expanded view */}
+                                            {project.website && (
+                                                <a
+                                                    href={project.website}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="mt-4 w-full block text-center px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-md text-sm transition-colors duration-200"
+                                                    onClick={e => e.stopPropagation()}
+                                                >
+                                                    Visit Website
+                                                </a>
+                                            )}
                                         </div>
                                     )}
                                 </div>
@@ -613,7 +631,7 @@
                 search: ''
             });
             const [expandedProjects, setExpandedProjects] = useState(new Set());
-            const [viewMode, setViewMode] = useState('list');
+            const [viewMode, setViewMode] = useState('grid');
             const [error, setError] = useState(null);
             const [sortConfig, setSortConfig] = useState({ field: 'projectName', direction: 'asc' });
             const [websiteData, setWebsiteData] = useState([]);
