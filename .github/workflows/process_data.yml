@@ -8,13 +8,13 @@ jobs:
   process-data:
     runs-on: ubuntu-latest
     # Skip commits made by GitHub Actions to prevent infinite loops
-    if: ${{ github.event_name == 'push' && github.actor != 'github-actions[bot]' }}
-    
+    # This email mush match the one set in the Configure stage below
+    if: ${{ github.event_name == 'push' && github.event.head_commit.committer.email != 'actions@github.com' }}
     steps:
     - name: Checkout repository
       uses: actions/checkout@v3
       with:
-        persist-credentials: false
+        persist-credentials: false # Keep this to prevent using default token
 
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -27,11 +27,21 @@ jobs:
     - name: Run processing script
       run: |
         python scripts/process.py "${{ github.sha }}"
-        
-    - name: Commit and push changes
+
+    - name: Configure Git
+      env:
+        PUSH_KEY: ${{ secrets.PUSH_KEY }}
       run: |
+        mkdir -p ~/.ssh
+        echo "$PUSH_KEY" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan github.com >> ~/.ssh/known_hosts
         git config --global user.name "GitHub Actions"
         git config --global user.email "actions@github.com"
+
+    - name: Commit and push changes
+      run: |
+        git remote set-url origin git@github.com:${GITHUB_REPOSITORY}.git
         git add results/
         git commit -m "Add processed data results"
         git push
