@@ -9,7 +9,7 @@ Other related documents can be found in [this Google Drive directory](https://dr
 ### How to test new algorithms and generate new results
 
 In the scripts dir, see "algorithm_v0.py" - this is a relatively minimalist implementation of a ranking algorithm. Try not to change it! Leave it there as an example.
-What you can do though is copy it to a new file, e.g. "algorithm_v1.py" and make whatever changes you want. Each time you submit to the repo, github should automatically run the *newest* file from the scripts dir whose name matches algorithm_*.py, and save the results into the results directory. NB the naming scheme for the results is ${timestamp}_${hash of the commit which triggered the results to be generated}_${algorithm file name which generated the results}.csv
+What you can do though is copy it to a new file, e.g. "algorithm_v1.py" and make whatever changes you want. Each time you submit to the repo, github should automatically run the *newest* file from the scripts dir whose name matches algorithm_*.py, and save the results into the results directory. NB the naming scheme for the results is `${timestamp}_${hash of the commit which triggered the results to be generated}_${algorithm file name which generated the results}.csv`
 
 
 ### TODO
