@@ -20,6 +20,9 @@ jobs:
       with:
         persist-credentials: false # Keep this to prevent using default token
 
+    # Might want to add an extra step here to verify that something relevant has actually changed.
+    # (rather than running for ALL changes within scripts and data dirs)
+
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
