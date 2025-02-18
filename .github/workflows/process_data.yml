@@ -3,6 +3,10 @@ name: Process CSV Data
 on:
   push:
     branches: [ "main" ]
+    paths:
+    # Only run this if files have changed in the scripts or data dirs
+      - 'scripts/**'
+      - 'data/**'
 
 jobs:
   process-data:
