@@ -17,3 +17,6 @@ What you can do though is copy it to a new file, e.g. "algorithm_v1.py" and make
 - Display results in some nicer way than just csv in github
 - Check in the scripts used to generate the source data csv
 - Automate generating the source data (incrementally!) when the generation scripts are updated. Maybe a database would be better for this than a csv?
+
+### Misc
+- If you want to inspect the csv files in jupyter/pandas/vscode, there's a helper script at scripts/jupyter_view.py
